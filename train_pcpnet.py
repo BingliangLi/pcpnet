@@ -22,7 +22,7 @@ def parse_arguments():
     parser = argparse.ArgumentParser()
 
     # naming / file handling
-    parser.add_argument('--name', type=str, default='my_single_scale_normal', help='training run name')
+    parser.add_argument('--name', type=str, default='baseline_single_scale_normal', help='training run name')
     parser.add_argument('--desc', type=str, default='My training run for single-scale normal estimation.', help='description')
     parser.add_argument('--indir', type=str, default='./pclouds', help='input folder (point clouds)')
     parser.add_argument('--outdir', type=str, default='./models', help='output folder (trained models)')
@@ -244,9 +244,9 @@ def train_pcpnet(opt):
     scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=[], gamma=0.1) # milestones in number of optimizer iterations
     
     # use multiple GPUs
-    if torch.cuda.device_count() > 1:
-        pcpnet = DataParallel(pcpnet)
-        print("Using %d GPUs" % (torch.cuda.device_count()))
+    # if torch.cuda.device_count() > 1:
+    #     pcpnet = DataParallel(pcpnet)
+    #     print("Using %d GPUs" % (torch.cuda.device_count()))
         
     #  move model to GPU
     pcpnet.to(device)
