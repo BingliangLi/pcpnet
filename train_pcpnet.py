@@ -393,4 +393,5 @@ def compute_loss(pred, target, outputs, output_pred_ind, output_target_ind, outp
 
 if __name__ == '__main__':
     train_opt = parse_arguments()
+    print(train_opt)
     train_pcpnet(train_opt)
