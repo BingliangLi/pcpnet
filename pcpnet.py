@@ -218,6 +218,7 @@ class PointNetfeat(nn.Module):
         shortcut = self.shortcut(x)
         x = F.relu(self.bn0a(self.conv0a(x)))
         x = F.relu(self.bn0b(self.conv0b(x)) + shortcut)
+        breakpoint()
         x = self.self_attention(x, x, x)[0]
 
         # feature transform
