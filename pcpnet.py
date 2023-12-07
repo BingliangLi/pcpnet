@@ -7,7 +7,31 @@ import torch.utils.data
 import torch.nn.functional as F
 import utils
 
+class ShortcutProjection(Module):
+    """
+    ## Linear projections for shortcut connection
 
+    This does the $W_s x$ projection described above.
+    """
+
+    def __init__(self, in_channels: int, out_channels: int, stride: int):
+        """
+        * `in_channels` is the number of channels in $x$
+        * `out_channels` is the number of channels in $\mathcal{F}(x, \{W_i\})$
+        * `stride` is the stride length in the convolution operation for $F$.
+        We do the same stride on the shortcut connection, to match the feature-map size.
+        """
+        super().__init__()
+
+        # Convolution layer for linear projection $W_s x$
+        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride)
+        # Paper suggests adding batch normalization after each convolution operation
+        self.bn = nn.BatchNorm2d(out_channels)
+
+    def forward(self, x: torch.Tensor):
+        # Convolution and batch normalization
+        return self.bn(self.conv(x))
+    
 class STN(nn.Module):
     def __init__(self, num_scales=1, num_points=500, dim=3, sym_op='max'):
         super(STN, self).__init__()
@@ -20,6 +44,7 @@ class STN(nn.Module):
         self.conv1 = torch.nn.Conv1d(self.dim, 64, 1)
         self.conv2 = torch.nn.Conv1d(64, 128, 1)
         self.conv3 = torch.nn.Conv1d(128, 1024, 1)
+        self.shortcut = ShortcutProjection(self.dim, 1024, 1)
         self.mp1 = torch.nn.MaxPool1d(num_points)
 
         self.fc1 = nn.Linear(1024, 512)
@@ -39,9 +64,10 @@ class STN(nn.Module):
 
     def forward(self, x):
         batchsize = x.size()[0]
+        shortcut = self.shortcut(x)
         x = F.relu(self.bn1(self.conv1(x)))
         x = F.relu(self.bn2(self.conv2(x)))
-        x = F.relu(self.bn3(self.conv3(x)))
+        x = F.relu(self.bn3(self.conv3(x)) + shortcut)
 
         # symmetric operation over all points
         if self.num_scales == 1:
@@ -78,6 +104,8 @@ class QSTN(nn.Module):
         self.conv1 = torch.nn.Conv1d(self.dim, 64, 1)
         self.conv2 = torch.nn.Conv1d(64, 128, 1)
         self.conv3 = torch.nn.Conv1d(128, 1024, 1)
+        self.shortcut = ShortcutProjection(self.dim, 1024, 1)
+        
         self.mp1 = torch.nn.MaxPool1d(num_points)
         self.fc1 = nn.Linear(1024, 512)
         self.fc2 = nn.Linear(512, 256)
@@ -95,9 +123,10 @@ class QSTN(nn.Module):
 
     def forward(self, x):
         batchsize = x.size()[0]
+        shortcut = self.shortcut(x)
         x = F.relu(self.bn1(self.conv1(x)))
         x = F.relu(self.bn2(self.conv2(x)))
-        x = F.relu(self.bn3(self.conv3(x)))
+        x = F.relu(self.bn3(self.conv3(x)) + shortcut)
 
         # symmetric operation over all points
         if self.num_scales == 1:
@@ -126,7 +155,6 @@ class QSTN(nn.Module):
 
         return x
 
-
 class PointNetfeat(nn.Module):
     def __init__(self, num_scales=1, num_points=500, use_point_stn=True, use_feat_stn=True, sym_op='max', get_pointfvals=False, point_tuple=1):
         super(PointNetfeat, self).__init__()
@@ -149,12 +177,17 @@ class PointNetfeat(nn.Module):
         self.conv0b = torch.nn.Conv1d(64, 64, 1)
         self.bn0a = nn.BatchNorm1d(64)
         self.bn0b = nn.BatchNorm1d(64)
+        self.shortcut = ShortcutProjection(3*self.point_tuple, 64, 1)
+        self.self_attention = nn.MultiheadAttention(64, 2)
+        
         self.conv1 = torch.nn.Conv1d(64, 64, 1)
         self.conv2 = torch.nn.Conv1d(64, 128, 1)
         self.conv3 = torch.nn.Conv1d(128, 1024, 1)
         self.bn1 = nn.BatchNorm1d(64)
         self.bn2 = nn.BatchNorm1d(128)
         self.bn3 = nn.BatchNorm1d(1024)
+        self.shortcut2 = ShortcutProjection(64, 1024, 1)
+        self.self_attention2 = nn.MultiheadAttention(1024, 2)
 
         if self.num_scales > 1:
             self.conv4 = torch.nn.Conv1d(1024, 1024*self.num_scales, 1)
@@ -182,8 +215,10 @@ class PointNetfeat(nn.Module):
             trans = None
 
         # mlp (64,64)
+        shortcut = self.shortcut(x)
         x = F.relu(self.bn0a(self.conv0a(x)))
-        x = F.relu(self.bn0b(self.conv0b(x)))
+        x = F.relu(self.bn0b(self.conv0b(x)) + shortcut)
+        x = self.self_attention(x, x, x)[0]
 
         # feature transform
         if self.use_feat_stn:
@@ -195,9 +230,11 @@ class PointNetfeat(nn.Module):
             trans2 = None
 
         # mlp (64,128,1024)
+        shortcut2 = self.shortcut2(x)
         x = F.relu(self.bn1(self.conv1(x)))
         x = F.relu(self.bn2(self.conv2(x)))
-        x = self.bn3(self.conv3(x))
+        x = self.bn3(self.conv3(x) + shortcut2)
+        x = self.self_attention2(x, x, x)[0]
 
         # mlp (1024,1024*num_scales)
         if self.num_scales > 1:
