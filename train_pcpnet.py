@@ -11,7 +11,9 @@ import torch.nn.parallel
 import torch.optim as optim
 import torch.optim.lr_scheduler as lr_scheduler
 import torch.utils.data
-from tensorboardX import SummaryWriter # https://github.com/lanpa/tensorboard-pytorch
+from torch.nn.parallel import DataParallel
+# from tensorboardX import SummaryWriter # https://github.com/lanpa/tensorboard-pytorch
+import wandb
 import utils
 from dataset import PointcloudPatchDataset, RandomPointcloudPatchSampler, SequentialShapeRandomPointcloudPatchSampler
 from pcpnet import PCPNet, MSPCPNet
@@ -40,9 +42,9 @@ def parse_arguments():
                         'mean: patch mean')
     parser.add_argument('--patch_point_count_std', type=float, default=0, help='standard deviation of the number of points in a patch')
     parser.add_argument('--patches_per_shape', type=int, default=1000, help='number of patches sampled from each shape in an epoch')
-    parser.add_argument('--workers', type=int, default=1, help='number of data loading workers - 0 means same thread as main execution')
+    parser.add_argument('--workers', type=int, default=16, help='number of data loading workers - 0 means same thread as main execution')
     parser.add_argument('--cache_capacity', type=int, default=100, help='Max. number of dataset elements (usually shapes) to hold in the cache at the same time.')
-    parser.add_argument('--seed', type=int, default=3627473, help='manual seed')
+    parser.add_argument('--seed', type=int, default=42, help='manual seed')
     parser.add_argument('--training_order', type=str, default='random', help='order in which the training patches are presented:\n'
                         'random: fully random over the entire dataset (the set of all patches is permuted)\n'
                         'random_shape_consecutive: random over the entire dataset, but patches of a shape remain consecutive (shapes and patches inside a shape are permuted)')
@@ -231,12 +233,22 @@ def train_pcpnet(opt):
     except OSError:
         pass
 
-
-    train_writer = SummaryWriter(os.path.join(log_dirname, 'train'))
-    test_writer = SummaryWriter(os.path.join(log_dirname, 'test'))
+    # TensorboardX summary writer
+    # train_writer = SummaryWriter(os.path.join(log_dirname, 'train'))
+    # test_writer = SummaryWriter(os.path.join(log_dirname, 'test'))
+    
+    # WandB
+    wandb.init(project="pcpnet", name=opt.name, config=opt, mode="offline")
 
     optimizer = optim.SGD(pcpnet.parameters(), lr=opt.lr, momentum=opt.momentum)
     scheduler = lr_scheduler.MultiStepLR(optimizer, milestones=[], gamma=0.1) # milestones in number of optimizer iterations
+    
+    # use multiple GPUs
+    if torch.cuda.device_count() > 1:
+        pcpnet = DataParallel(pcpnet)
+        print("Using %d GPUs" % (torch.cuda.device_count()))
+        
+    #  move model to GPU
     pcpnet.to(device)
 
     train_num_batch = len(train_dataloader)
@@ -301,7 +313,8 @@ def train_pcpnet(opt):
 
             # print info and update log file
             print('[%s %d: %d/%d] %s loss: %f' % (opt.name, epoch, train_batchind, train_num_batch-1, green('train'), loss.item()))
-            train_writer.add_scalar('loss', loss.item(), (epoch + train_fraction_done) * train_num_batch * opt.batchSize)
+            # train_writer.add_scalar('loss', loss.item(), (epoch + train_fraction_done) * train_num_batch * opt.batchSize)
+            wandb.log({"loss": loss.item()})
 
             while test_fraction_done <= train_fraction_done and test_batchind+1 < test_num_batch:
 
@@ -336,7 +349,8 @@ def train_pcpnet(opt):
 
                 # print info and update log file
                 print('[%s %d: %d/%d] %s loss: %f' % (opt.name, epoch, train_batchind, train_num_batch-1, blue('test'), loss.item()))
-                test_writer.add_scalar('loss', loss.item(), (epoch + test_fraction_done) * train_num_batch * opt.batchSize)
+                # test_writer.add_scalar('loss', loss.item(), (epoch + test_fraction_done) * train_num_batch * opt.batchSize)
+                wandb.log({"test_loss": loss.item()})
 
         # save model, overwriting the old model
         if epoch % opt.saveinterval == 0 or epoch == opt.nepoch-1:
