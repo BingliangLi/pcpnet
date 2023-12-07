@@ -24,9 +24,9 @@ class ShortcutProjection(nn.Module):
         super().__init__()
 
         # Convolution layer for linear projection $W_s x$
-        self.conv = nn.Conv2d(in_channels, out_channels, kernel_size=1, stride=stride)
+        self.conv = nn.Conv1d(in_channels, out_channels, kernel_size=1, stride=stride)
         # Paper suggests adding batch normalization after each convolution operation
-        self.bn = nn.BatchNorm2d(out_channels)
+        self.bn = nn.BatchNorm1d(out_channels)
 
     def forward(self, x: torch.Tensor):
         # Convolution and batch normalization
