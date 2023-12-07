@@ -218,8 +218,9 @@ class PointNetfeat(nn.Module):
         shortcut = self.shortcut(x)
         x = F.relu(self.bn0a(self.conv0a(x)))
         x = F.relu(self.bn0b(self.conv0b(x)) + shortcut)
-        breakpoint()
+        x = x.permute(2, 0, 1)
         x = self.self_attention(x, x, x)[0]
+        x = x.permute(1, 2, 0)
 
         # feature transform
         if self.use_feat_stn:
@@ -235,7 +236,9 @@ class PointNetfeat(nn.Module):
         x = F.relu(self.bn1(self.conv1(x)))
         x = F.relu(self.bn2(self.conv2(x)))
         x = self.bn3(self.conv3(x) + shortcut2)
+        x = x.permute(2, 0, 1)
         x = self.self_attention2(x, x, x)[0]
+        x = x.permute(1, 2, 0)
 
         # mlp (1024,1024*num_scales)
         if self.num_scales > 1:
