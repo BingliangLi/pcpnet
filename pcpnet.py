@@ -7,7 +7,7 @@ import torch.utils.data
 import torch.nn.functional as F
 import utils
 
-class ShortcutProjection(Module):
+class ShortcutProjection(nn.Module):
     """
     ## Linear projections for shortcut connection
 
