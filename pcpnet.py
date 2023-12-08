@@ -30,7 +30,7 @@ class ShortcutProjection(nn.Module):
 
     def forward(self, x: torch.Tensor):
         # Convolution and batch normalization
-        return self.bn(self.conv(x))
+        return self.bn(self.conv(x.contiguous()))
     
 class STN(nn.Module):
     def __init__(self, num_scales=1, num_points=500, dim=3, sym_op='max'):
